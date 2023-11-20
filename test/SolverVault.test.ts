@@ -2,7 +2,7 @@ import { expect } from "chai";
 import { Signer } from "ethers";
 import { ethers, upgrades } from "hardhat";
 
-function decimal(n: number, decimal: number = 18): BigInt {
+function decimal(n: number, decimal: number = 18): bigint {
   return BigInt(n) * BigInt(Math.pow(10, decimal))
 }
 
@@ -17,7 +17,7 @@ describe("SolverVault", function () {
   let owner: Signer, depositor: Signer, balancer: Signer, receiver: Signer, other: Signer;
   let DEPOSITOR_ROLE, BALANCER_ROLE, MINTER_ROLE;
 
-  before(async function () {
+  beforeEach(async function () {
     [owner, depositor, balancer, receiver, other] = await ethers.getSigners();
 
     const SolverVault = await ethers.getContractFactory("SolverVault");
@@ -70,6 +70,7 @@ describe("SolverVault", function () {
         .to.emit(solverVault, "Deposit")
         .withArgs(await depositor.getAddress(), depositAmount);
       expect(await solverVaultToken.balanceOf(await depositor.getAddress())).to.equal(depositAmount);
+      expect(await collateralToken.balanceOf(await solverVault.getAddress())).to.equal(depositAmount);
     });
 
     it("should fail if transfer fails", async function () {
@@ -140,18 +141,27 @@ describe("SolverVault", function () {
           .withArgs(requestIds, paybackRatio);
         const request = await solverVault.withdrawRequests(0);
         expect(request[2]).to.equal(RequestStatus.Ready);
+        expect(await solverVault.lockedBalance()).to.equal(request.amount * paybackRatio / decimal(1));
       });
 
       it("should fail if payback ratio is too low", async function () {
-        await expect(solverVault.connect(balancer).acceptWithdrawRequest(requestIds, decimal(40, 16))).to.be.revertedWith("SolverVault: Payback ratio is too low");
+        await expect(solverVault.connect(balancer).acceptWithdrawRequest(requestIds, decimal(40, 16)))
+          .to.be.revertedWith("SolverVault: Payback ratio is too low");
       });
 
 
       describe("claimForWithdrawRequest", function () {
         const requestId = 0;
+        let lockedBalance: bigint;
 
         beforeEach(async function () {
           solverVault.connect(balancer).acceptWithdrawRequest(requestIds, paybackRatio);
+          lockedBalance = (await solverVault.withdrawRequests(0)).amount * paybackRatio / decimal(1);
+        })
+
+        it("Should fail to deposit to symmio more than available", async function () {
+          await expect(solverVault.connect(depositor).depositToSymmio(depositAmount - lockedBalance + BigInt(1), await other.getAddress()))
+            .to.be.revertedWith("SolverVault: Insufficient contract balance")
         })
 
         it("should claim withdraw", async function () {
@@ -162,7 +172,16 @@ describe("SolverVault", function () {
           expect(request[2]).to.equal(RequestStatus.Done);
         });
 
+        it("should fail on invalid ID", async function () {
+          await expect(solverVault.connect(receiver).claimForWithdrawRequest(1)).to.be.revertedWith("SolverVault: Invalid request ID");
+        });
+
         it("should fail if request is not ready", async function () {
+          await collateralToken.connect(owner).mint(await depositor.getAddress(), depositAmount);
+          await collateralToken.connect(depositor).approve(await solverVault.getAddress(), depositAmount);
+          await solverVaultToken.connect(depositor).approve(await solverVault.getAddress(), withdrawAmount);
+          await solverVault.connect(depositor).deposit(depositAmount);
+          await solverVault.connect(depositor).requestWithdraw(withdrawAmount, await receiver.getAddress());
           await expect(solverVault.connect(receiver).claimForWithdrawRequest(1)).to.be.revertedWith("SolverVault: Request not ready for withdrawal");
         });
       });
