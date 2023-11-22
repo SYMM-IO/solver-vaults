@@ -119,8 +119,8 @@ PausableUpgradeable
             "SolverVault: Transfer failed"
         );
         uint256 amountWith18Decimals = amount * (10 ** (18 - collateralDecimals));
-        uint256 amountInsolverVaultTokenDecimals = amountWith18Decimals / (10 ** (18 - solverVaultTokenDecimals));
-        symmioVaultToken.mint(msg.sender, amountInsolverVaultTokenDecimals);
+        uint256 amountInSolverVaultTokenDecimals = amountWith18Decimals / (10 ** (18 - solverVaultTokenDecimals));
+        symmioVaultToken.mint(msg.sender, amountInSolverVaultTokenDecimals);
         emit Deposit(msg.sender, amount);
     }
 
