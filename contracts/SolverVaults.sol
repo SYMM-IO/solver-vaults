@@ -63,7 +63,7 @@ PausableUpgradeable
     uint256 public minimumPaybackRatio;
 
     uint256 public collateralDecimals;
-    uint256 public vaultTokenDecimals;
+    uint256 public solverVaultTokenDecimals;
 
     function initialize(
         address _symmioAddress,
@@ -105,9 +105,9 @@ PausableUpgradeable
         address _symmioVaultTokenAddress
     ) public onlyRole(DEFAULT_ADMIN_ROLE) {
         symmioVaultToken = SolverVaultToken(_symmioVaultTokenAddress);
-        vaultTokenDecimals = symmioVaultToken.decimals();
+        solverVaultTokenDecimals = symmioVaultToken.decimals();
         require(
-            vaultTokenDecimals <= 18,
+            solverVaultTokenDecimals <= 18,
             "SolverVault: SolverVaultToken decimals should be lower than 18"
         );
         emit SymmioVaultTokenAddressUpdatedEvent(_symmioVaultTokenAddress);
@@ -119,8 +119,8 @@ PausableUpgradeable
             "SolverVault: Transfer failed"
         );
         uint256 amountWith18Decimals = amount * (10 ** (18 - collateralDecimals));
-        uint256 amountInVaultTokenDecimals = amountWith18Decimals / (10 ** (18 - vaultTokenDecimals));
-        symmioVaultToken.mint(msg.sender, amountInVaultTokenDecimals);
+        uint256 amountInsolverVaultTokenDecimals = amountWith18Decimals / (10 ** (18 - solverVaultTokenDecimals));
+        symmioVaultToken.mint(msg.sender, amountInsolverVaultTokenDecimals);
         emit Deposit(msg.sender, amount);
     }
 
@@ -151,9 +151,9 @@ PausableUpgradeable
         );
         symmioVaultToken.burnFrom(msg.sender, amount);
 
-        uint256 amountInCollateralDecimals = vaultTokenDecimals >= collateralDecimals ?
-            amount / (10 ** (vaultTokenDecimals - collateralDecimals)) :
-            amount / (10 ** (collateralDecimals - vaultTokenDecimals));
+        uint256 amountInCollateralDecimals = solverVaultTokenDecimals >= collateralDecimals ?
+            amount * (10 ** (solverVaultTokenDecimals - collateralDecimals)) :
+            amount / (10 ** (collateralDecimals - solverVaultTokenDecimals));
 
         withdrawRequests.push(
             WithdrawRequest({
