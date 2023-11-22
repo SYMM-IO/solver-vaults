@@ -4,17 +4,18 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "./SolverVaultToken.sol";
 import "./interfaces/ISymmio.sol";
 
 contract SolverVault is
-    Initializable,
-    AccessControlUpgradeable,
-    PausableUpgradeable
+Initializable,
+AccessControlUpgradeable,
+PausableUpgradeable
 {
     bytes32 public constant DEPOSITOR_ROLE = keccak256("DEPOSITOR_ROLE");
     bytes32 public constant BALANCER_ROLE = keccak256("BALANCER_ROLE");
+    bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
 
     struct WithdrawRequest {
         address receiver;
@@ -53,13 +54,16 @@ contract SolverVault is
         address indexed newSymmioVaultTokenAddress
     );
 
-    IERC20 public collateralToken;
+    IERC20Metadata public collateralToken;
     ISymmio public symmio;
     SolverVaultToken public symmioVaultToken;
 
     WithdrawRequest[] public withdrawRequests;
     uint256 public lockedBalance;
     uint256 public minimumPaybackRatio;
+
+    uint256 public collateralDecimals;
+    uint256 public vaultTokenDecimals;
 
     function initialize(
         address _symmioAddress,
@@ -72,6 +76,7 @@ contract SolverVault is
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(DEPOSITOR_ROLE, msg.sender);
         _grantRole(BALANCER_ROLE, msg.sender);
+        _grantRole(SETTER_ROLE, msg.sender);
         setSymmioAddress(_symmioAddress);
         setSymmioVaultTokenAddress(_symmioVaultTokenAddress);
         lockedBalance = 0;
@@ -80,7 +85,12 @@ contract SolverVault is
 
     function updateCollateral() public {
         address collateralAddress = symmio.getCollateral();
-        collateralToken = IERC20(collateralAddress);
+        collateralToken = IERC20Metadata(collateralAddress);
+        collateralDecimals = collateralToken.decimals();
+        require(
+            collateralDecimals <= 18,
+            "SolverVault: Collateral decimals should be lower than 18"
+        );
     }
 
     function setSymmioAddress(
@@ -95,22 +105,29 @@ contract SolverVault is
         address _symmioVaultTokenAddress
     ) public onlyRole(DEFAULT_ADMIN_ROLE) {
         symmioVaultToken = SolverVaultToken(_symmioVaultTokenAddress);
+        vaultTokenDecimals = symmioVaultToken.decimals();
+        require(
+            vaultTokenDecimals <= 18,
+            "SolverVault: SolverVaultToken decimals should be lower than 18"
+        );
         emit SymmioVaultTokenAddressUpdatedEvent(_symmioVaultTokenAddress);
     }
 
-    function deposit(uint256 amount) public {
+    function deposit(uint256 amount) public whenNotPaused {
         require(
             collateralToken.transferFrom(msg.sender, address(this), amount),
             "SolverVault: Transfer failed"
         );
-        symmioVaultToken.mint(msg.sender, amount);
+        uint256 amountWith18Decimals = amount * (10 ** (18 - collateralDecimals));
+        uint256 amountInVaultTokenDecimals = amountWith18Decimals / (10 ** (18 - vaultTokenDecimals));
+        symmioVaultToken.mint(msg.sender, amountInVaultTokenDecimals);
         emit Deposit(msg.sender, amount);
     }
 
     function depositToSymmio(
         uint256 amount,
         address partyB
-    ) public onlyRole(DEPOSITOR_ROLE) {
+    ) public onlyRole(DEPOSITOR_ROLE) whenNotPaused {
         uint256 contractBalance = collateralToken.balanceOf(address(this));
         require(
             contractBalance - lockedBalance >= amount,
@@ -124,17 +141,24 @@ contract SolverVault is
         emit DepositToSymmio(msg.sender, partyB, amount);
     }
 
-    function requestWithdraw(uint256 amount, address receiver) public {
+    function requestWithdraw(
+        uint256 amount,
+        address receiver
+    ) public whenNotPaused {
         require(
             symmioVaultToken.balanceOf(msg.sender) >= amount,
             "SolverVault: Insufficient token balance"
         );
         symmioVaultToken.burnFrom(msg.sender, amount);
 
+        uint256 amountInCollateralDecimals = vaultTokenDecimals >= collateralDecimals ?
+            amount / (10 ** (vaultTokenDecimals - collateralDecimals)) :
+            amount / (10 ** (collateralDecimals - vaultTokenDecimals));
+
         withdrawRequests.push(
             WithdrawRequest({
                 receiver: receiver,
-                amount: amount,
+                amount: amountInCollateralDecimals,
                 status: RequestStatus.Pending,
                 acceptedRatio: 0
             })
@@ -142,14 +166,14 @@ contract SolverVault is
         emit WithdrawRequestEvent(
             withdrawRequests.length - 1,
             receiver,
-            amount
+            amountInCollateralDecimals
         );
     }
 
     function acceptWithdrawRequest(
         uint256[] memory _acceptedRequestIds,
         uint256 _paybackRatio
-    ) public onlyRole(BALANCER_ROLE) {
+    ) public onlyRole(BALANCER_ROLE) whenNotPaused {
         require(
             _paybackRatio >= minimumPaybackRatio,
             "SolverVault: Payback ratio is too low"
@@ -181,7 +205,7 @@ contract SolverVault is
         emit WithdrawRequestAcceptedEvent(_acceptedRequestIds, _paybackRatio);
     }
 
-    function claimForWithdrawRequest(uint256 requestId) public {
+    function claimForWithdrawRequest(uint256 requestId) public whenNotPaused {
         require(
             requestId < withdrawRequests.length,
             "SolverVault: Invalid request ID"
@@ -201,5 +225,13 @@ contract SolverVault is
             "SolverVault: Transfer failed"
         );
         emit WithdrawClaimedEvent(requestId, request.receiver);
+    }
+
+    function pause() public onlyRole(SETTER_ROLE) {
+        _pause();
+    }
+
+    function unpause() public onlyRole(SETTER_ROLE) {
+        _unpause();
     }
 }
