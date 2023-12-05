@@ -7,6 +7,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "./SolverVaultToken.sol";
 import "./interfaces/ISymmio.sol";
+import "hardhat/console.sol";
 
 contract SolverVault is
 Initializable,
@@ -53,6 +54,9 @@ PausableUpgradeable
     event SymmioVaultTokenAddressUpdatedEvent(
         address indexed newSymmioVaultTokenAddress
     );
+    event DepositLimitUpdatedEvent(
+        uint256 value
+    );
 
     IERC20Metadata public collateralToken;
     ISymmio public symmio;
@@ -61,14 +65,18 @@ PausableUpgradeable
     WithdrawRequest[] public withdrawRequests;
     uint256 public lockedBalance;
     uint256 public minimumPaybackRatio;
+    uint256 public depositLimit;
+    uint256 public currentDeposit;
 
     uint256 public collateralDecimals;
     uint256 public solverVaultTokenDecimals;
 
+
     function initialize(
         address _symmioAddress,
         address _symmioVaultTokenAddress,
-        uint256 _minimumPaybackRatio
+        uint256 _minimumPaybackRatio,
+        uint256 _depositLimit
     ) public initializer {
         __AccessControl_init();
         __Pausable_init();
@@ -79,6 +87,7 @@ PausableUpgradeable
         _grantRole(SETTER_ROLE, msg.sender);
         setSymmioAddress(_symmioAddress);
         setSymmioVaultTokenAddress(_symmioVaultTokenAddress);
+        setDepositLimit(_depositLimit);
         lockedBalance = 0;
         minimumPaybackRatio = _minimumPaybackRatio;
     }
@@ -113,14 +122,25 @@ PausableUpgradeable
         emit SymmioVaultTokenAddressUpdatedEvent(_symmioVaultTokenAddress);
     }
 
+    function setDepositLimit(
+        uint256 _depositLimit
+    ) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        depositLimit = _depositLimit;
+        emit DepositLimitUpdatedEvent(_depositLimit);
+    }
+
     function deposit(uint256 amount) public whenNotPaused {
+        require(currentDeposit + amount <= depositLimit, "SolverVault: Deposit limit reached");
         require(
             collateralToken.transferFrom(msg.sender, address(this), amount),
             "SolverVault: Transfer failed"
         );
-        uint256 amountWith18Decimals = amount * (10 ** (18 - collateralDecimals));
-        uint256 amountInSolverVaultTokenDecimals = amountWith18Decimals / (10 ** (18 - solverVaultTokenDecimals));
+        uint256 amountInSolverVaultTokenDecimals = solverVaultTokenDecimals >= collateralDecimals ?
+            amount * (10 ** (solverVaultTokenDecimals - collateralDecimals)) :
+            amount / (10 ** (collateralDecimals - solverVaultTokenDecimals));
+
         symmioVaultToken.mint(msg.sender, amountInSolverVaultTokenDecimals);
+        currentDeposit += amount;
         emit Deposit(msg.sender, amount);
     }
 
@@ -151,9 +171,11 @@ PausableUpgradeable
         );
         symmioVaultToken.burnFrom(msg.sender, amount);
 
-        uint256 amountInCollateralDecimals = solverVaultTokenDecimals >= collateralDecimals ?
-            amount * (10 ** (solverVaultTokenDecimals - collateralDecimals)) :
-            amount / (10 ** (collateralDecimals - solverVaultTokenDecimals));
+        uint256 amountInCollateralDecimals = collateralDecimals >= solverVaultTokenDecimals ?
+            amount * (10 ** (collateralDecimals - solverVaultTokenDecimals)) :
+            amount / (10 ** (solverVaultTokenDecimals - collateralDecimals));
+
+        currentDeposit -= amountInCollateralDecimals;
 
         withdrawRequests.push(
             WithdrawRequest({
