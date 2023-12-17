@@ -14,13 +14,14 @@ enum RequestStatus {
 
 describe("SolverVault", function () {
     let solverVault: any, collateralToken: any, symmio: any, solverVaultToken: any
-    let owner: Signer, depositor: Signer, balancer: Signer, receiver: Signer, other: Signer
-    let DEPOSITOR_ROLE, BALANCER_ROLE, MINTER_ROLE
+    let owner: Signer, depositor: Signer, balancer: Signer, receiver: Signer, setter: Signer, pauser: Signer,
+        unpauser: Signer, solver: Signer, other: Signer
+    let DEPOSITOR_ROLE, BALANCER_ROLE, MINTER_ROLE, PAUSER_ROLE, UNPAUSER_ROLE, SETTER_ROLE
     let collateralDecimals: bigint = 6n, solverVaultTokenDecimals: bigint = 8n
     const depositLimit = decimal(100000)
 
     beforeEach(async function () {
-        [owner, depositor, balancer, receiver, other] = await ethers.getSigners()
+        [owner, depositor, balancer, receiver, setter, pauser, unpauser, solver, other] = await ethers.getSigners()
 
         const SolverVault = await ethers.getContractFactory("SolverVault")
         const CollateralToken = await ethers.getContractFactory("MockERC20")
@@ -39,23 +40,31 @@ describe("SolverVault", function () {
         solverVault = await upgrades.deployProxy(SolverVault, [
             await symmio.getAddress(),
             await solverVaultToken.getAddress(),
+            await solver.getAddress(),
             500000000000000000n, // 0.5,
             depositLimit,
         ])
 
         DEPOSITOR_ROLE = await solverVault.DEPOSITOR_ROLE()
         BALANCER_ROLE = await solverVault.BALANCER_ROLE()
+        SETTER_ROLE = await solverVault.SETTER_ROLE()
+        PAUSER_ROLE = await solverVault.PAUSER_ROLE()
+        UNPAUSER_ROLE = await solverVault.UNPAUSER_ROLE()
+        BALANCER_ROLE = await solverVault.BALANCER_ROLE()
         MINTER_ROLE = await solverVaultToken.MINTER_ROLE()
 
         await solverVault.connect(owner).grantRole(DEPOSITOR_ROLE, depositor.getAddress())
         await solverVault.connect(owner).grantRole(BALANCER_ROLE, balancer.getAddress())
+        await solverVault.connect(owner).grantRole(SETTER_ROLE, setter.getAddress())
+        await solverVault.connect(owner).grantRole(PAUSER_ROLE, pauser.getAddress())
+        await solverVault.connect(owner).grantRole(UNPAUSER_ROLE, unpauser.getAddress())
         await solverVaultToken.connect(owner).grantRole(MINTER_ROLE, solverVault.getAddress())
     })
 
     describe("initialize", function () {
         it("should set initial values correctly", async function () {
             expect(await solverVault.symmio()).to.equal(await symmio.getAddress())
-            expect(await solverVault.symmioVaultToken()).to.equal(await solverVaultToken.getAddress())
+            expect(await solverVault.solverVaultTokenAddress()).to.equal(await solverVaultToken.getAddress())
         })
     })
 
@@ -120,14 +129,14 @@ describe("SolverVault", function () {
         })
 
         it("should deposit to symmio", async function () {
-            await expect(solverVault.connect(depositor).depositToSymmio(depositAmount, await other.getAddress()))
+            await expect(solverVault.connect(depositor).depositToSymmio(depositAmount))
                 .to.emit(solverVault, "DepositToSymmio")
-                .withArgs(await depositor.getAddress(), await other.getAddress(), depositAmount)
-            expect(await symmio.balanceOf(await other.getAddress())).to.equal(depositAmount)
+                .withArgs(await depositor.getAddress(), await solver.getAddress(), depositAmount)
+            expect(await symmio.balanceOf(await solver.getAddress())).to.equal(depositAmount)
         })
 
         it("should fail if not called by depositor role", async function () {
-            await expect(solverVault.connect(other).depositToSymmio(depositAmount, await other.getAddress())).to.be.reverted
+            await expect(solverVault.connect(other).depositToSymmio(depositAmount)).to.be.reverted
         })
     })
 
@@ -172,16 +181,28 @@ describe("SolverVault", function () {
             })
 
             it("should accept withdraw request", async function () {
-                await expect(solverVault.connect(balancer).acceptWithdrawRequest(requestIds, paybackRatio))
+                await expect(solverVault.connect(balancer).acceptWithdrawRequest(0, requestIds, paybackRatio))
                     .to.emit(solverVault, "WithdrawRequestAcceptedEvent")
-                    .withArgs(requestIds, paybackRatio)
+                    .withArgs(0, requestIds, paybackRatio)
+                const request = await solverVault.withdrawRequests(0)
+                expect(request[2]).to.equal(RequestStatus.Ready)
+                expect(await solverVault.lockedBalance()).to.equal(request.amount * paybackRatio / decimal(1))
+            })
+
+            it("should accept withdraw request with provided amount", async function () {
+                await solverVault.connect(depositor).depositToSymmio(depositAmount);
+                await collateralToken.connect(owner).mint(balancer.getAddress(), depositAmount)
+                await collateralToken.connect(balancer).approve(solverVault.getAddress(), depositAmount)
+                await expect(solverVault.connect(balancer).acceptWithdrawRequest(depositAmount, requestIds, paybackRatio))
+                    .to.emit(solverVault, "WithdrawRequestAcceptedEvent")
+                    .withArgs(depositAmount, requestIds, paybackRatio)
                 const request = await solverVault.withdrawRequests(0)
                 expect(request[2]).to.equal(RequestStatus.Ready)
                 expect(await solverVault.lockedBalance()).to.equal(request.amount * paybackRatio / decimal(1))
             })
 
             it("should fail if payback ratio is too low", async function () {
-                await expect(solverVault.connect(balancer).acceptWithdrawRequest(requestIds, decimal(40, 16n)))
+                await expect(solverVault.connect(balancer).acceptWithdrawRequest(0, requestIds, decimal(40, 16n)))
                     .to.be.revertedWith("SolverVault: Payback ratio is too low")
             })
 
@@ -191,12 +212,12 @@ describe("SolverVault", function () {
                 let lockedBalance: bigint
 
                 beforeEach(async function () {
-                    solverVault.connect(balancer).acceptWithdrawRequest(requestIds, paybackRatio)
+                    solverVault.connect(balancer).acceptWithdrawRequest(0, requestIds, paybackRatio)
                     lockedBalance = (await solverVault.withdrawRequests(0)).amount * paybackRatio / decimal(1)
                 })
 
                 it("Should fail to deposit to symmio more than available", async function () {
-                    await expect(solverVault.connect(depositor).depositToSymmio(depositAmount - lockedBalance + BigInt(1), await other.getAddress()))
+                    await expect(solverVault.connect(depositor).depositToSymmio(depositAmount - lockedBalance + BigInt(1)))
                         .to.be.revertedWith("SolverVault: Insufficient contract balance")
                 })
 

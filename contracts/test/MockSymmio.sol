@@ -13,7 +13,7 @@ contract MockSymmio {
         return collateral;
     }
 
-    function depositFor(uint256 amount, address partyB) external {
+    function depositFor(address partyB, uint256 amount) external {
         balances[partyB] += amount;
     }
 
