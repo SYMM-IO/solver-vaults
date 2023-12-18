@@ -83,7 +83,9 @@ contract SolverVault is
     ) public initializer {
         __AccessControl_init();
         __Pausable_init();
-
+        
+        require(_minimumPaybackRatio <= 1e18, "SolverVault: Invalid ratio");
+        
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(DEPOSITOR_ROLE, msg.sender);
         _grantRole(BALANCER_ROLE, msg.sender);
@@ -102,6 +104,7 @@ contract SolverVault is
     function setSymmioAddress(
         address _symmioAddress
     ) public onlyRole(SETTER_ROLE) {
+        require(_symmioAddress != address(0), "SolverVault: Zero address");
         symmio = ISymmio(_symmioAddress);
         address beforeCollateral = collateralTokenAddress;
         updateCollateral();
@@ -114,6 +117,7 @@ contract SolverVault is
     }
 
     function setSolver(address _solver) public onlyRole(SETTER_ROLE) {
+        require(_solver != address(0), "SolverVault: Zero address");
         solver = _solver;
         emit SolverUpdatedEvent(_solver);
     }
@@ -131,6 +135,7 @@ contract SolverVault is
     function setSymmioVaultTokenAddress(
         address _symmioVaultTokenAddress
     ) internal {
+        require(_symmioVaultTokenAddress != address(0), "SolverVault: Zero address");
         solverVaultTokenAddress = _symmioVaultTokenAddress;
         solverVaultTokenDecimals = SolverVaultToken(_symmioVaultTokenAddress)
             .decimals();
