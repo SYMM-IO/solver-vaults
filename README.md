@@ -23,7 +23,7 @@ management of this limit is handled by the 'currentDeposit' variable.
 - **Setter Role:** Authorized to update contract settings.
 - **Pauser and Unpauser Roles:** Manage the pausing and unpausing of the contract.
 
-## Deposit and Withdrawal
+## Main Functions
 
 - **deposit:** Allows users to deposit funds and receive vault tokens.
 - **depositToSymmio:** Permits the Depositor role to deposit funds into Symmio on behalf of the solver.
