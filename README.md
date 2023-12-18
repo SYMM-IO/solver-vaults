@@ -2,13 +2,19 @@
 
 ## Overview
 
-This solution enables users to provide liquidity for a Hedger (solver) on the Symmio platform. Upon depositing funds,
-the contract issues users vault tokens in a 1:1 ratio to their deposited amount. Users can then stake these vault tokens
-in another contract to earn returns. Additionally, users have the flexibility to request the withdrawal of their funds
-at any time by returning their vault tokens. The contract includes a 'minimumPaybackRatio' property, defining the least
-ratio of funds users are guaranteed to receive upon withdrawal. When a user initiates a withdrawal request, the Balancer
-can transfer additional funds into the contract and approve the withdrawal request at a ratio exceeding the minimum
-stipulated ratio. After that user can claim their accepted amount.
+This contract enables users to provide liquidity for a Hedger (solver) on the Symmio platform. When users deposit funds,
+the contract issues vault tokens in a 1:1 ratio with the deposited amount. Users can stake these vault tokens in another
+contract to earn returns. They also have the option to withdraw their funds anytime by returning their vault tokens.
+
+The contract includes a 'minimumPaybackRatio' property, which specifies the minimum ratio of funds that users are
+guaranteed to receive upon withdrawal. If a user requests a withdrawal, the Balancer has the capability to add extra
+funds to the contract and approve the withdrawal request at a ratio exceeding the minimum required. Once the Balancer
+accepts a withdrawal request, the approved amount is locked in the contract and cannot be transferred to Symmio
+thereafter. This amount is reserved exclusively for users, who can then claim the amount that has been approved for
+them.
+
+Additionally, there's a deposit limit in place. This limit caps the total amount users can put into the contract. The
+management of this limit is handled by the 'currentDeposit' variable.
 
 ## Contract Roles
 
@@ -25,7 +31,6 @@ stipulated ratio. After that user can claim their accepted amount.
 - **acceptWithdrawRequest:** The Balancer role can accept withdrawal requests, ensuring the payback ratio meets the
   minimum threshold.
 - **claimForWithdrawRequest:** Users can claim their funds after their withdrawal request is accepted.
-
 
 Use the following command for running tests:
 
