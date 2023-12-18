@@ -14,14 +14,25 @@ enum RequestStatus {
 
 describe("SolverVault", function () {
     let solverVault: any, collateralToken: any, symmio: any, solverVaultToken: any
-    let owner: Signer, depositor: Signer, balancer: Signer, receiver: Signer, setter: Signer, pauser: Signer,
-        unpauser: Signer, solver: Signer, other: Signer
+    let owner: Signer, user: Signer, depositor: Signer, balancer: Signer, receiver: Signer, setter: Signer,
+        pauser: Signer, unpauser: Signer, solver: Signer, other: Signer
     let DEPOSITOR_ROLE, BALANCER_ROLE, MINTER_ROLE, PAUSER_ROLE, UNPAUSER_ROLE, SETTER_ROLE
     let collateralDecimals: bigint = 6n, solverVaultTokenDecimals: bigint = 8n
     const depositLimit = decimal(100000)
 
+    async function mintFor(signer: Signer, amount: BigInt) {
+        await collateralToken.connect(owner).mint(signer.getAddress(), amount)
+        await collateralToken.connect(user).approve(await solverVault.getAddress(), amount)
+    }
+
+    function convertToVaultDecimals(depositAmount: bigint) {
+        return solverVaultTokenDecimals >= collateralDecimals ?
+            depositAmount * (10n ** (solverVaultTokenDecimals - collateralDecimals)) :
+            depositAmount / 10n ** (collateralDecimals - solverVaultTokenDecimals)
+    }
+
     beforeEach(async function () {
-        [owner, depositor, balancer, receiver, setter, pauser, unpauser, solver, other] = await ethers.getSigners()
+        [owner, user, depositor, balancer, receiver, setter, pauser, unpauser, solver, other] = await ethers.getSigners()
 
         const SolverVault = await ethers.getContractFactory("SolverVault")
         const CollateralToken = await ethers.getContractFactory("MockERC20")
@@ -68,22 +79,20 @@ describe("SolverVault", function () {
         })
     })
 
+
     describe("deposit", function () {
         const depositAmount = decimal(1, collateralDecimals)
 
         beforeEach(async function () {
-            await collateralToken.connect(owner).mint(depositor.getAddress(), depositAmount)
-            await collateralToken.connect(depositor).approve(await solverVault.getAddress(), depositAmount)
+            await mintFor(user, depositAmount)
         })
 
         it("should deposit tokens", async function () {
-            await expect(solverVault.connect(depositor).deposit(depositAmount))
+            await expect(solverVault.connect(user).deposit(depositAmount))
                 .to.emit(solverVault, "Deposit")
-                .withArgs(await depositor.getAddress(), depositAmount)
-            let amountInSolverTokenDecimals = solverVaultTokenDecimals >= collateralDecimals ?
-                depositAmount * (10n ** (solverVaultTokenDecimals - collateralDecimals)) :
-                depositAmount / 10n ** (collateralDecimals - solverVaultTokenDecimals)
-            expect(await solverVaultToken.balanceOf(await depositor.getAddress())).to.equal(amountInSolverTokenDecimals)
+                .withArgs(await user.getAddress(), depositAmount)
+            let amountInSolverTokenDecimals = convertToVaultDecimals(depositAmount)
+            expect(await solverVaultToken.balanceOf(await user.getAddress())).to.equal(amountInSolverTokenDecimals)
             expect(await collateralToken.balanceOf(await solverVault.getAddress())).to.equal(depositAmount)
             expect(await solverVault.currentDeposit()).to.equal(depositAmount)
         })
@@ -93,39 +102,35 @@ describe("SolverVault", function () {
         })
 
         it("should fail to deposit more than limit", async function () {
-            await expect(solverVault.connect(other).deposit(depositLimit + 1n))
+            await expect(solverVault.connect(user).deposit(depositLimit + 1n))
                 .to.be.revertedWith("SolverVault: Deposit limit reached")
         })
 
         it("should update the current deposit amount", async function () {
             const amount = depositLimit - depositAmount + 1n
 
-            await solverVault.connect(depositor).deposit(depositAmount)
+            await solverVault.connect(user).deposit(depositAmount)
 
             await expect(solverVault.connect(other).deposit(amount))
                 .to.be.revertedWith("SolverVault: Deposit limit reached")
 
-            let amountInSolverTokenDecimals = solverVaultTokenDecimals >= collateralDecimals ?
-                depositAmount * (10n ** (solverVaultTokenDecimals - collateralDecimals)) :
-                depositAmount / (10n ** (collateralDecimals - solverVaultTokenDecimals))
-            await solverVaultToken.connect(depositor).approve(await solverVault.getAddress(), amountInSolverTokenDecimals)
+            let amountInSolverTokenDecimals = convertToVaultDecimals(depositAmount)
 
-            await solverVault.connect(depositor).requestWithdraw(amountInSolverTokenDecimals, await owner.getAddress())
+            await solverVaultToken.connect(user).approve(await solverVault.getAddress(), amountInSolverTokenDecimals)
+            await solverVault.connect(user).requestWithdraw(amountInSolverTokenDecimals, await owner.getAddress())
 
-            await collateralToken.connect(owner).mint(depositor.getAddress(), amount)
-            await collateralToken.connect(depositor).approve(await solverVault.getAddress(), amount)
-            await expect(solverVault.connect(depositor).deposit(amount))
+            await mintFor(user, amount)
+            await expect(solverVault.connect(user).deposit(amount))
                 .to.not.be.reverted
         })
     })
 
     describe("depositToSymmio", function () {
-        const depositAmount = decimal(500)
+        const depositAmount = decimal(500, collateralDecimals)
 
         beforeEach(async function () {
-            await collateralToken.connect(owner).mint(await depositor.getAddress(), depositAmount)
-            await collateralToken.connect(depositor).approve(await solverVault.getAddress(), depositAmount)
-            await solverVault.connect(depositor).deposit(depositAmount)
+            await mintFor(user, depositAmount)
+            await solverVault.connect(user).deposit(depositAmount)
         })
 
         it("should deposit to symmio", async function () {
@@ -143,21 +148,17 @@ describe("SolverVault", function () {
     describe("requestWithdraw", function () {
         const depositAmount = decimal(500, collateralDecimals)
         const withdrawAmountInCollateralDecimals = depositAmount
-        const withdrawAmount = solverVaultTokenDecimals >= collateralDecimals ?
-            depositAmount * (10n ** (solverVaultTokenDecimals - collateralDecimals)) :
-            depositAmount / 10n ** (collateralDecimals - solverVaultTokenDecimals)
+        const withdrawAmount = convertToVaultDecimals(depositAmount)
 
         beforeEach(async function () {
-            await collateralToken.connect(owner).mint(await depositor.getAddress(), depositAmount)
-            await collateralToken.connect(depositor).approve(await solverVault.getAddress(), depositAmount)
-
-            await solverVaultToken.connect(depositor).approve(await solverVault.getAddress(), withdrawAmount)
-            await solverVault.connect(depositor).deposit(depositAmount)
+            await mintFor(user, depositAmount)
+            await solverVault.connect(user).deposit(depositAmount)
+            await solverVaultToken.connect(user).approve(await solverVault.getAddress(), withdrawAmount)
         })
 
         it("should request withdraw", async function () {
             const rec = await receiver.getAddress()
-            await expect(solverVault.connect(depositor).requestWithdraw(withdrawAmount, rec))
+            await expect(solverVault.connect(user).requestWithdraw(withdrawAmount, rec))
                 .to.emit(solverVault, "WithdrawRequestEvent")
                 .withArgs(0, rec, withdrawAmountInCollateralDecimals)
 
@@ -177,7 +178,7 @@ describe("SolverVault", function () {
             const paybackRatio = decimal(70, 16n)
 
             beforeEach(async function () {
-                await solverVault.connect(depositor).requestWithdraw(withdrawAmount, await receiver.getAddress())
+                await solverVault.connect(user).requestWithdraw(withdrawAmount, await receiver.getAddress())
             })
 
             it("should accept withdraw request", async function () {
@@ -190,8 +191,8 @@ describe("SolverVault", function () {
             })
 
             it("should accept withdraw request with provided amount", async function () {
-                await solverVault.connect(depositor).depositToSymmio(depositAmount);
-                await collateralToken.connect(owner).mint(balancer.getAddress(), depositAmount)
+                await solverVault.connect(depositor).depositToSymmio(depositAmount)
+                await mintFor(balancer, depositAmount)
                 await collateralToken.connect(balancer).approve(solverVault.getAddress(), depositAmount)
                 await expect(solverVault.connect(balancer).acceptWithdrawRequest(depositAmount, requestIds, paybackRatio))
                     .to.emit(solverVault, "WithdrawRequestAcceptedEvent")
@@ -234,11 +235,10 @@ describe("SolverVault", function () {
                 })
 
                 it("should fail if request is not ready", async function () {
-                    await collateralToken.connect(owner).mint(await depositor.getAddress(), depositAmount)
-                    await collateralToken.connect(depositor).approve(await solverVault.getAddress(), depositAmount)
-                    await solverVaultToken.connect(depositor).approve(await solverVault.getAddress(), withdrawAmount)
-                    await solverVault.connect(depositor).deposit(depositAmount)
-                    await solverVault.connect(depositor).requestWithdraw(withdrawAmount, await receiver.getAddress())
+                    await mintFor(user, depositAmount)
+                    await solverVaultToken.connect(user).approve(await solverVault.getAddress(), withdrawAmount)
+                    await solverVault.connect(user).deposit(depositAmount)
+                    await solverVault.connect(user).requestWithdraw(withdrawAmount, await receiver.getAddress())
                     await expect(solverVault.connect(receiver).claimForWithdrawRequest(1)).to.be.revertedWith("SolverVault: Request not ready for withdrawal")
                 })
             })
