@@ -1,5 +1,5 @@
 import {expect} from "chai"
-import {Signer} from "ethers"
+import {Signer, ZeroAddress} from "ethers"
 import {ethers, upgrades} from "hardhat"
 
 function decimal(n: number, decimal: bigint = 18n): bigint {
@@ -13,7 +13,7 @@ enum RequestStatus {
 }
 
 describe("SolverVault", function () {
-    let solverVault: any, collateralToken: any, symmio: any, solverVaultToken: any
+    let solverVault: any, collateralToken: any, symmio: any, symmioWithDifferentCollateral: any, solverVaultToken: any
     let owner: Signer, user: Signer, depositor: Signer, balancer: Signer, receiver: Signer, setter: Signer,
         pauser: Signer, unpauser: Signer, solver: Signer, other: Signer
     let DEPOSITOR_ROLE, BALANCER_ROLE, MINTER_ROLE, PAUSER_ROLE, UNPAUSER_ROLE, SETTER_ROLE
@@ -35,18 +35,20 @@ describe("SolverVault", function () {
         [owner, user, depositor, balancer, receiver, setter, pauser, unpauser, solver, other] = await ethers.getSigners()
 
         const SolverVault = await ethers.getContractFactory("SolverVault")
-        const CollateralToken = await ethers.getContractFactory("MockERC20")
+        const MockERC20 = await ethers.getContractFactory("MockERC20")
         const Symmio = await ethers.getContractFactory("MockSymmio")
-        const SolverVaultToken = await ethers.getContractFactory("MockERC20")
 
-        collateralToken = await CollateralToken.connect(owner).deploy(collateralDecimals)
+        collateralToken = await MockERC20.connect(owner).deploy(collateralDecimals)
         await collateralToken.waitForDeployment()
 
         symmio = await Symmio.deploy(await collateralToken.getAddress())
         await symmio.waitForDeployment()
 
-        solverVaultToken = await SolverVaultToken.deploy(solverVaultTokenDecimals)
+        solverVaultToken = await MockERC20.deploy(solverVaultTokenDecimals)
         await solverVaultToken.waitForDeployment()
+
+        symmioWithDifferentCollateral = await Symmio.deploy(await solverVaultToken.getAddress())
+        await symmioWithDifferentCollateral.waitForDeployment()
 
         solverVault = await upgrades.deployProxy(SolverVault, [
             await symmio.getAddress(),
@@ -77,6 +79,36 @@ describe("SolverVault", function () {
             expect(await solverVault.symmio()).to.equal(await symmio.getAddress())
             expect(await solverVault.solverVaultTokenAddress()).to.equal(await solverVaultToken.getAddress())
         })
+
+        it("Should fail to update collateral", async () => {
+            await expect(solverVault.connect(owner).setSymmioAddress(await symmioWithDifferentCollateral.getAddress()))
+                .to.be.revertedWith("SolverVault: Collateral can not be changed")
+        })
+
+        it("Should fail to set invalid solver", async () => {
+            await expect(solverVault.connect(owner).setSolver(ZeroAddress))
+                .to.be.revertedWith("SolverVault: Zero address")
+            await expect(solverVault.connect(other).setSolver(await solver.getAddress())).to.be.reverted
+        })
+
+        it("Should fail to set symmioAddress", async () => {
+            await expect(solverVault.connect(owner).setSymmioAddress(ZeroAddress))
+                .to.be.revertedWith("SolverVault: Zero address")
+            await expect(solverVault.connect(other).setSymmioAddress(await solver.getAddress())).to.be.reverted
+        })
+
+        it("Should pause/unpause with given roles", async () => {
+            await solverVault.connect(pauser).pause()
+            await solverVault.connect(unpauser).unpause()
+            await expect(solverVault.connect(other).pause()).to.be.reverted
+            await expect(solverVault.connect(other).unpause()).to.be.reverted
+        })
+
+        it("Should update deposit limit", async () => {
+            await solverVault.connect(setter).setDepositLimit(1000)
+            await expect(solverVault.connect(other).setDepositLimit(1000)).to.be.reverted
+        })
+
     })
 
 
@@ -95,6 +127,12 @@ describe("SolverVault", function () {
             expect(await solverVaultToken.balanceOf(await user.getAddress())).to.equal(amountInSolverTokenDecimals)
             expect(await collateralToken.balanceOf(await solverVault.getAddress())).to.equal(depositAmount)
             expect(await solverVault.currentDeposit()).to.equal(depositAmount)
+        })
+
+        it("should fail when is paused", async function () {
+            await solverVault.connect(pauser).pause()
+            await expect(solverVault.connect(user).deposit(depositAmount))
+                .to.be.reverted
         })
 
         it("should fail if transfer fails", async function () {
@@ -139,6 +177,11 @@ describe("SolverVault", function () {
                 .withArgs(await depositor.getAddress(), await solver.getAddress(), depositAmount)
             expect(await symmio.balanceOf(await solver.getAddress())).to.equal(depositAmount)
         })
+        it("should fail when is paused", async function () {
+            await solverVault.connect(pauser).pause()
+            await expect(solverVault.connect(depositor).depositToSymmio(depositAmount))
+                .to.be.reverted
+        })
 
         it("should fail if not called by depositor role", async function () {
             await expect(solverVault.connect(other).depositToSymmio(depositAmount)).to.be.reverted
@@ -169,6 +212,13 @@ describe("SolverVault", function () {
             expect(request[3]).to.equal(0n)
         })
 
+        it("should fail when is paused", async function () {
+            await solverVault.connect(pauser).pause()
+            const rec = await receiver.getAddress()
+            await expect(solverVault.connect(user).requestWithdraw(withdrawAmount, rec))
+                .to.be.reverted
+        })
+
         it("should fail if insufficient token balance", async function () {
             await expect(solverVault.connect(other).requestWithdraw(withdrawAmount, await receiver.getAddress())).to.be.reverted
         })
@@ -181,6 +231,11 @@ describe("SolverVault", function () {
                 await solverVault.connect(user).requestWithdraw(withdrawAmount, await receiver.getAddress())
             })
 
+            it("should fail on invalid Id", async function () {
+                await expect(solverVault.connect(balancer).acceptWithdrawRequest(0, [5], paybackRatio))
+                    .to.be.revertedWith("SolverVault: Invalid request ID")
+            })
+
             it("should accept withdraw request", async function () {
                 await expect(solverVault.connect(balancer).acceptWithdrawRequest(0, requestIds, paybackRatio))
                     .to.emit(solverVault, "WithdrawRequestAcceptedEvent")
@@ -188,6 +243,23 @@ describe("SolverVault", function () {
                 const request = await solverVault.withdrawRequests(0)
                 expect(request[2]).to.equal(RequestStatus.Ready)
                 expect(await solverVault.lockedBalance()).to.equal(request.amount * paybackRatio / decimal(1))
+            })
+
+            it("should fail on invalid role", async function () {
+                await expect(solverVault.connect(other).acceptWithdrawRequest(0, requestIds, paybackRatio))
+                    .to.be.reverted
+            })
+
+            it("should fail when paused", async function () {
+                await solverVault.connect(pauser).pause()
+                await expect(solverVault.connect(balancer).acceptWithdrawRequest(0, requestIds, paybackRatio))
+                    .to.be.reverted
+            })
+
+            it("should fail to accept already accepted request", async function () {
+                await solverVault.connect(balancer).acceptWithdrawRequest(0, requestIds, paybackRatio)
+                await expect(solverVault.connect(balancer).acceptWithdrawRequest(0, requestIds, paybackRatio))
+                    .to.be.revertedWith("SolverVault: Invalid accepted request")
             })
 
             it("should accept withdraw request with provided amount", async function () {
@@ -200,6 +272,12 @@ describe("SolverVault", function () {
                 const request = await solverVault.withdrawRequests(0)
                 expect(request[2]).to.equal(RequestStatus.Ready)
                 expect(await solverVault.lockedBalance()).to.equal(request.amount * paybackRatio / decimal(1))
+            })
+
+            it("should fail to accept with insufficient balance", async function () {
+                await solverVault.connect(depositor).depositToSymmio(depositAmount)
+                await expect(solverVault.connect(balancer).acceptWithdrawRequest(0, requestIds, paybackRatio))
+                    .to.be.revertedWith("SolverVault: Insufficient contract balance")
             })
 
             it("should fail if payback ratio is too low", async function () {
@@ -228,6 +306,12 @@ describe("SolverVault", function () {
                         .withArgs(requestId, await receiver.getAddress())
                     const request = await solverVault.withdrawRequests(0)
                     expect(request[2]).to.equal(RequestStatus.Done)
+                })
+
+                it("should fail when paused", async function () {
+                    await solverVault.connect(pauser).pause()
+                    await expect(solverVault.connect(receiver).claimForWithdrawRequest(requestId))
+                        .to.be.reverted
                 })
 
                 it("should fail on invalid ID", async function () {
