@@ -11,6 +11,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "./SolverVaultToken.sol";
 import "./interfaces/ISymmio.sol";
+import "./interfaces/IBlast.sol";
 
 contract SolverVault is
     Initializable,
@@ -25,6 +26,8 @@ contract SolverVault is
     bytes32 public constant SETTER_ROLE = keccak256("SETTER_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
+
+    IBlast public constant BLAST = IBlast(0x4300000000000000000000000000000000000002);
 
     struct WithdrawRequest {
         address receiver;
@@ -102,6 +105,9 @@ contract SolverVault is
         lockedBalance = 0;
         currentDeposit = 0;
         minimumPaybackRatio = _minimumPaybackRatio;
+
+        BLAST.configureClaimableYield();
+        BLAST.configureClaimableGas();
     }
 
     function setSymmioAddress(
@@ -304,5 +310,30 @@ contract SolverVault is
 
     function unpause() external onlyRole(UNPAUSER_ROLE) {
         _unpause();
+    }
+
+    function claimYield(address recipient, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(recipient != address(this), "SolverVault: recipient can not be the contract itself");
+        BLAST.claimYield(address(this), recipient, amount);
+    }
+
+    function claimAllYield(address recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(recipient != address(this), "SolverVault: recipient can not be the contract itself");
+        BLAST.claimAllYield(address(this), recipient);
+    }
+
+    function claimAllGas(address recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(recipient != address(this), "SolverVault: recipient can not be the contract itself");
+        BLAST.claimAllGas(address(this), recipient);
+    }
+
+    function claimMaxGas(address recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(recipient != address(this), "SolverVault: recipient can not be the contract itself");
+        BLAST.claimMaxGas(address(this), recipient);
+    }
+
+    function claimGasAtMinClaimRate(address recipient, uint256 minRate) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(recipient != address(this), "SolverVault: recipient can not be the contract itself");
+        BLAST.claimGasAtMinClaimRate(address(this), recipient, minRate);
     }
 }
