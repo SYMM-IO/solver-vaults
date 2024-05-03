@@ -13,9 +13,9 @@ import "./SymmioSolverDepositorToken.sol";
 import "./interfaces/ISymmio.sol";
 
 contract RasaOffChainSymmioDepositor is
-    Initializable,
-    AccessControlEnumerableUpgradeable,
-    PausableUpgradeable
+Initializable,
+AccessControlEnumerableUpgradeable,
+PausableUpgradeable
 {
     // Use SafeERC20 for safer token transfers
     using SafeERC20 for IERC20;
@@ -122,7 +122,7 @@ contract RasaOffChainSymmioDepositor is
         updateCollateral();
         require(
             beforeCollateral == collateralTokenAddress ||
-                beforeCollateral == address(0),
+            beforeCollateral == address(0),
             "SymmioSolverDepositor: Collateral can not be changed"
         );
         emit SymmioAddressUpdatedEvent(_symmioAddress);
@@ -183,7 +183,7 @@ contract RasaOffChainSymmioDepositor is
         emit Deposit(msg.sender, amount);
     }
 
-    function depositToSymmio(
+    function depositToBroker(
         uint256 amount
     ) external onlyRole(DEPOSITOR_ROLE) whenNotPaused {
         uint256 contractBalance = IERC20(collateralTokenAddress).balanceOf(
@@ -193,11 +193,7 @@ contract RasaOffChainSymmioDepositor is
             contractBalance - lockedBalance >= amount,
             "SymmioSolverDepositor: Insufficient contract balance"
         );
-        require(
-            IERC20(collateralTokenAddress).approve(address(symmio), amount),
-            "SymmioSolverDepositor: Approve failed"
-        );
-        symmio.depositFor(broker, amount);
+        IERC20(collateralTokenAddress).safeTransfer(broker, amount);
         emit DepositToBroker(msg.sender, broker, amount);
     }
 
@@ -208,7 +204,7 @@ contract RasaOffChainSymmioDepositor is
     ) external whenNotPaused {
         require(
             SymmioSolverDepositorToken(lpTokenAddress).balanceOf(msg.sender) >=
-                amount,
+            amount,
             "SymmioSolverDepositor: Insufficient token balance"
         );
         SymmioSolverDepositorToken(lpTokenAddress).burnFrom(msg.sender, amount);
@@ -277,7 +273,7 @@ contract RasaOffChainSymmioDepositor is
                 "SymmioSolverDepositor: Invalid accepted request"
             );
             uint256 amountOut = (withdrawRequests[id].amount * _paybackRatio) /
-                1e18;
+                        1e18;
             require(
                 amountOut >= withdrawRequests[id].minAmountOut,
                 "SymmioSolverDepositor: Payback ratio is too low for this request"
@@ -290,7 +286,7 @@ contract RasaOffChainSymmioDepositor is
 
         require(
             IERC20(collateralTokenAddress).balanceOf(address(this)) >=
-                totalRequiredBalance,
+            totalRequiredBalance,
             "SymmioSolverDepositor: Insufficient contract balance"
         );
         lockedBalance = totalRequiredBalance;
