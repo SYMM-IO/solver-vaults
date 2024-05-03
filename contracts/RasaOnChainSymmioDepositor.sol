@@ -148,7 +148,7 @@ contract RasaOnChainSymmioDepositor is
             "SymmioSolverDepositor: Zero address"
         );
         lpTokenAddress = _symmioSolverDepositorTokenAddress;
-        uint256 lpTokenDecimals = SymmioSolverDepositorToken(
+        uint256 lpTokenDecimals = SymmioDepositorLpToken(
             _symmioSolverDepositorTokenAddress
         ).decimals();
         require(
@@ -174,7 +174,7 @@ contract RasaOnChainSymmioDepositor is
             address(this),
             amount
         );
-        SymmioSolverDepositorToken(lpTokenAddress).mint(msg.sender, amount);
+        SymmioDepositorLpToken(lpTokenAddress).mint(msg.sender, amount);
         currentDeposit += amount;
         emit Deposit(msg.sender, amount);
     }
@@ -203,11 +203,11 @@ contract RasaOnChainSymmioDepositor is
         address receiver
     ) external whenNotPaused {
         require(
-            SymmioSolverDepositorToken(lpTokenAddress).balanceOf(msg.sender) >=
+            SymmioDepositorLpToken(lpTokenAddress).balanceOf(msg.sender) >=
                 amount,
             "SymmioSolverDepositor: Insufficient token balance"
         );
-        SymmioSolverDepositorToken(lpTokenAddress).burnFrom(msg.sender, amount);
+        SymmioDepositorLpToken(lpTokenAddress).burnFrom(msg.sender, amount);
 
         withdrawRequests.push(
             WithdrawRequest({
@@ -237,8 +237,12 @@ contract RasaOnChainSymmioDepositor is
             request.sender == msg.sender,
             "SymmioSolverDepositor: Only the sender of request can cancel it"
         );
+        require(
+            request.status == RequestStatus.Pending,
+            "SymmioSolverDepositor: Invalid status"
+        );
         request.status = RequestStatus.Canceled;
-        SymmioSolverDepositorToken(lpTokenAddress).mint(
+        SymmioDepositorLpToken(lpTokenAddress).mint(
             msg.sender,
             request.amount
         );
