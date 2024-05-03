@@ -39,7 +39,7 @@ contract RasaOnChainSymmioDepositor is
         Pending,
         Ready,
         Done,
-        Cancelled
+        Canceled
     }
 
     event Deposit(address indexed depositor, uint256 amount);
@@ -96,11 +96,7 @@ contract RasaOnChainSymmioDepositor is
         );
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(DEPOSITOR_ROLE, msg.sender);
-        _grantRole(BALANCER_ROLE, msg.sender);
         _grantRole(SETTER_ROLE, msg.sender);
-        _grantRole(PAUSER_ROLE, msg.sender);
-        _grantRole(UNPAUSER_ROLE, msg.sender);
         setSymmioAddress(_symmioAddress);
         setLpTokenAddress(_lpTokenAddress);
         setDepositLimit(_depositLimit);
@@ -212,7 +208,6 @@ contract RasaOnChainSymmioDepositor is
             "SymmioSolverDepositor: Insufficient token balance"
         );
         SymmioSolverDepositorToken(lpTokenAddress).burnFrom(msg.sender, amount);
-        currentDeposit -= amount;
 
         withdrawRequests.push(
             WithdrawRequest({
@@ -242,12 +237,11 @@ contract RasaOnChainSymmioDepositor is
             request.sender == msg.sender,
             "SymmioSolverDepositor: Only the sender of request can cancel it"
         );
-        request.status = RequestStatus.Cancelled;
+        request.status = RequestStatus.Canceled;
         SymmioSolverDepositorToken(lpTokenAddress).mint(
             msg.sender,
             request.amount
         );
-        currentDeposit += request.amount;
     }
 
     function acceptWithdrawRequest(
@@ -283,7 +277,7 @@ contract RasaOnChainSymmioDepositor is
                 "SymmioSolverDepositor: Payback ratio is too low for this request"
             );
             totalRequiredBalance += amountOut;
-
+            currentDeposit -= withdrawRequests[id].amount;
             withdrawRequests[id].status = RequestStatus.Ready;
             withdrawRequests[id].acceptedRatio = _paybackRatio;
         }

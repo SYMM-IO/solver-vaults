@@ -13,9 +13,9 @@ import "./SymmioSolverDepositorToken.sol";
 import "./interfaces/ISymmio.sol";
 
 contract RasaOffChainSymmioDepositor is
-Initializable,
-AccessControlEnumerableUpgradeable,
-PausableUpgradeable
+    Initializable,
+    AccessControlEnumerableUpgradeable,
+    PausableUpgradeable
 {
     // Use SafeERC20 for safer token transfers
     using SafeERC20 for IERC20;
@@ -39,7 +39,7 @@ PausableUpgradeable
         Pending,
         Ready,
         Done,
-        Cancelled
+        Canceled
     }
 
     event Deposit(address indexed depositor, uint256 amount);
@@ -96,11 +96,7 @@ PausableUpgradeable
         );
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(DEPOSITOR_ROLE, msg.sender);
-        _grantRole(BALANCER_ROLE, msg.sender);
         _grantRole(SETTER_ROLE, msg.sender);
-        _grantRole(PAUSER_ROLE, msg.sender);
-        _grantRole(UNPAUSER_ROLE, msg.sender);
         setSymmioAddress(_symmioAddress);
         setLpTokenAddress(_lpTokenAddress);
         setDepositLimit(_depositLimit);
@@ -122,7 +118,7 @@ PausableUpgradeable
         updateCollateral();
         require(
             beforeCollateral == collateralTokenAddress ||
-            beforeCollateral == address(0),
+                beforeCollateral == address(0),
             "SymmioSolverDepositor: Collateral can not be changed"
         );
         emit SymmioAddressUpdatedEvent(_symmioAddress);
@@ -204,11 +200,10 @@ PausableUpgradeable
     ) external whenNotPaused {
         require(
             SymmioSolverDepositorToken(lpTokenAddress).balanceOf(msg.sender) >=
-            amount,
+                amount,
             "SymmioSolverDepositor: Insufficient token balance"
         );
         SymmioSolverDepositorToken(lpTokenAddress).burnFrom(msg.sender, amount);
-        currentDeposit -= amount;
 
         withdrawRequests.push(
             WithdrawRequest({
@@ -238,12 +233,11 @@ PausableUpgradeable
             request.sender == msg.sender,
             "SymmioSolverDepositor: Only the sender of request can cancel it"
         );
-        request.status = RequestStatus.Cancelled;
+        request.status = RequestStatus.Canceled;
         SymmioSolverDepositorToken(lpTokenAddress).mint(
             msg.sender,
             request.amount
         );
-        currentDeposit += request.amount;
     }
 
     function acceptWithdrawRequest(
@@ -273,20 +267,20 @@ PausableUpgradeable
                 "SymmioSolverDepositor: Invalid accepted request"
             );
             uint256 amountOut = (withdrawRequests[id].amount * _paybackRatio) /
-                        1e18;
+                1e18;
             require(
                 amountOut >= withdrawRequests[id].minAmountOut,
                 "SymmioSolverDepositor: Payback ratio is too low for this request"
             );
             totalRequiredBalance += amountOut;
-
+            currentDeposit -= withdrawRequests[id].amount;
             withdrawRequests[id].status = RequestStatus.Ready;
             withdrawRequests[id].acceptedRatio = _paybackRatio;
         }
 
         require(
             IERC20(collateralTokenAddress).balanceOf(address(this)) >=
-            totalRequiredBalance,
+                totalRequiredBalance,
             "SymmioSolverDepositor: Insufficient contract balance"
         );
         lockedBalance = totalRequiredBalance;
