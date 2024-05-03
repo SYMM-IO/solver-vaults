@@ -208,7 +208,10 @@ contract RasaOnChainSymmioDepositor is
             "SymmioSolverDepositor: Insufficient token balance"
         );
         SymmioDepositorLpToken(lpTokenAddress).burnFrom(msg.sender, amount);
-
+        require(
+            receiver != address(0),
+            "SymmioSolverDepositor: Zero address for receiver"
+        );
         withdrawRequests.push(
             WithdrawRequest({
                 sender: msg.sender,
@@ -261,6 +264,10 @@ contract RasaOnChainSymmioDepositor is
         require(
             _paybackRatio >= minimumPaybackRatio,
             "SymmioSolverDepositor: Payback ratio is too low"
+        );
+        require(
+            _paybackRatio <= 1e18,
+            "SymmioSolverDepositor: Payback ratio is too high"
         );
         uint256 totalRequiredBalance = lockedBalance;
 
