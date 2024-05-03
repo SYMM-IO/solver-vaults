@@ -12,7 +12,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "./SymmioSolverDepositorToken.sol";
 import "./interfaces/ISymmio.sol";
 
-contract SymmioSolverDepositor is
+contract RasaOnChainSymmioDepositor is
     Initializable,
     AccessControlEnumerableUpgradeable,
     PausableUpgradeable
