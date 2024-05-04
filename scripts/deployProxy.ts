@@ -16,7 +16,7 @@ async function main() {
 	await contract.waitForDeployment()
 
 	const addresses = {
-		proxy: contract.address,
+		proxy: await contract.getAddress(),
 		admin: await upgrades.erc1967.getAdminAddress(await contract.getAddress()),
 		implementation: await upgrades.erc1967.getImplementationAddress(await contract.getAddress()),
 	}

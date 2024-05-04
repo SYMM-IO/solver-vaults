@@ -46,6 +46,7 @@ contract RasaOffChainSymmioDepositor is Initializable, SymmioDepositor {
     function depositToBroker(
         uint256 amount
     ) external onlyRole(DEPOSITOR_ROLE) whenNotPaused {
+        require(broker != address(0), "SymmioSolverDepositor: Zero address");
         uint256 contractBalance = IERC20(collateralTokenAddress).balanceOf(
             address(this)
         );
