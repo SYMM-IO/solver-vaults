@@ -11,3 +11,4 @@ out
 .vscode
 pnpm-lock.yaml
 .idea
+yarn.lock
