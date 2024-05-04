@@ -9,9 +9,9 @@ async function main() {
 	const contract = await upgrades.deployProxy(Factory, [
 		"", //_symmioAddress
 		"", //_lpTokenAddress
-		"", //_solver or _broker
 		0, //_minimumPaybackRatio
 		0, //_depositLimit
+		"", //_solver or _broker
 	], {initializer: "initialize"})
 	await contract.waitForDeployment()
 

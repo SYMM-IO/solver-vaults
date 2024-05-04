@@ -78,7 +78,7 @@ contract SymmioDepositor is
         address _lpTokenAddress,
         uint256 _minimumPaybackRatio,
         uint256 _depositLimit
-    ) public {
+    ) internal onlyInitializing {
         __AccessControl_init();
         __Pausable_init();
 
@@ -109,7 +109,7 @@ contract SymmioDepositor is
         updateCollateral();
         require(
             beforeCollateral == collateralTokenAddress ||
-                beforeCollateral == address(0),
+            beforeCollateral == address(0),
             "SymmioSolverDepositor: Collateral can not be changed"
         );
         emit SymmioAddressUpdatedEvent(_symmioAddress);
@@ -171,7 +171,7 @@ contract SymmioDepositor is
     ) external whenNotPaused {
         require(
             SymmioDepositorLpToken(lpTokenAddress).balanceOf(msg.sender) >=
-                amount,
+            amount,
             "SymmioSolverDepositor: Insufficient token balance"
         );
         SymmioDepositorLpToken(lpTokenAddress).burnFrom(msg.sender, amount);
@@ -247,7 +247,7 @@ contract SymmioDepositor is
                 "SymmioSolverDepositor: Invalid accepted request"
             );
             uint256 amountOut = (withdrawRequests[id].amount * _paybackRatio) /
-                1e18;
+                        1e18;
             require(
                 amountOut >= withdrawRequests[id].minAmountOut,
                 "SymmioSolverDepositor: Payback ratio is too low for this request"
@@ -260,7 +260,7 @@ contract SymmioDepositor is
 
         require(
             IERC20(collateralTokenAddress).balanceOf(address(this)) >=
-                totalRequiredBalance,
+            totalRequiredBalance,
             "SymmioSolverDepositor: Insufficient contract balance"
         );
         lockedBalance = totalRequiredBalance;
