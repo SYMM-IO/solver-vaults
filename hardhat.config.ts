@@ -109,7 +109,7 @@ const config: HardhatUserConfig = {
 				network: "blast",
 				chainId: 81457,
 				urls: {
-					apiURL: `https://api.blastscan.io/api?apiKey=${blastApiKey}`,
+					apiURL: `https://api.blastscan.io/api`,
 					browserURL: "https://blastscan.io",
 				},
 			},
