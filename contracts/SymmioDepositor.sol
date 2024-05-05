@@ -11,6 +11,8 @@ import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "./SymmioDepositorLpToken.sol";
 import "./interfaces/ISymmio.sol";
+import "./interfaces/IBlast.sol";
+import "./interfaces/IBlastPoints.sol";
 
 contract SymmioDepositor is
     AccessControlEnumerableUpgradeable,
@@ -73,6 +75,10 @@ contract SymmioDepositor is
 
     uint256 public collateralTokenDecimals;
 
+    IBlast public constant BLAST = IBlast(0x4300000000000000000000000000000000000002);
+    IBlastPoints public constant BLAST_POINTS = IBlastPoints(0x2536FE9ab3F511540F2f9e2eC2A805005C3Dd800);
+    IERC20Rebasing public constant USDB = IERC20Rebasing(0x4300000000000000000000000000000000000003);
+
     function __SymmioDepositor_init(
         address _symmioAddress,
         address _lpTokenAddress,
@@ -84,7 +90,7 @@ contract SymmioDepositor is
 
         require(
             _minimumPaybackRatio <= 1e18,
-            "SymmioSolverDepositor: Invalid ratio"
+            "SymmioDepositor: Invalid ratio"
         );
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -95,6 +101,10 @@ contract SymmioDepositor is
         lockedBalance = 0;
         currentDeposit = 0;
         minimumPaybackRatio = _minimumPaybackRatio;
+
+        BLAST.configureClaimableYield();
+        BLAST.configureClaimableGas();
+        USDB.configure(YieldMode.CLAIMABLE);
     }
 
     function setSymmioAddress(
@@ -102,7 +112,7 @@ contract SymmioDepositor is
     ) public onlyRole(SETTER_ROLE) {
         require(
             _symmioAddress != address(0),
-            "SymmioSolverDepositor: Zero address"
+            "SymmioDepositor: Zero address"
         );
         symmio = ISymmio(_symmioAddress);
         address beforeCollateral = collateralTokenAddress;
@@ -110,7 +120,7 @@ contract SymmioDepositor is
         require(
             beforeCollateral == collateralTokenAddress ||
             beforeCollateral == address(0),
-            "SymmioSolverDepositor: Collateral can not be changed"
+            "SymmioDepositor: Collateral can not be changed"
         );
         emit SymmioAddressUpdatedEvent(_symmioAddress);
     }
@@ -121,24 +131,24 @@ contract SymmioDepositor is
             .decimals();
         require(
             collateralTokenDecimals <= 18,
-            "SymmioSolverDepositor: Collateral decimals should be lower than or equal to 18"
+            "SymmioDepositor: Collateral decimals should be lower than or equal to 18"
         );
     }
 
     function setLpTokenAddress(
-        address _symmioSolverDepositorTokenAddress
+        address _SymmioDepositorTokenAddress
     ) internal {
         require(
-            _symmioSolverDepositorTokenAddress != address(0),
-            "SymmioSolverDepositor: Zero address"
+            _SymmioDepositorTokenAddress != address(0),
+            "SymmioDepositor: Zero address"
         );
-        lpTokenAddress = _symmioSolverDepositorTokenAddress;
+        lpTokenAddress = _SymmioDepositorTokenAddress;
         uint256 lpTokenDecimals = SymmioDepositorLpToken(
-            _symmioSolverDepositorTokenAddress
+            _SymmioDepositorTokenAddress
         ).decimals();
         require(
             lpTokenDecimals == collateralTokenDecimals,
-            "SymmioSolverDepositor: LP token decimals should be the same as collateral token"
+            "SymmioDepositor: LP token decimals should be the same as collateral token"
         );
     }
 
@@ -152,7 +162,7 @@ contract SymmioDepositor is
     function deposit(uint256 amount) external whenNotPaused {
         require(
             currentDeposit + amount <= depositLimit,
-            "SymmioSolverDepositor: Deposit limit reached"
+            "SymmioDepositor: Deposit limit reached"
         );
         IERC20(collateralTokenAddress).safeTransferFrom(
             msg.sender,
@@ -172,12 +182,12 @@ contract SymmioDepositor is
         require(
             SymmioDepositorLpToken(lpTokenAddress).balanceOf(msg.sender) >=
             amount,
-            "SymmioSolverDepositor: Insufficient token balance"
+            "SymmioDepositor: Insufficient token balance"
         );
         SymmioDepositorLpToken(lpTokenAddress).burnFrom(msg.sender, amount);
         require(
             receiver != address(0),
-            "SymmioSolverDepositor: Zero address for receiver"
+            "SymmioDepositor: Zero address for receiver"
         );
         withdrawRequests.push(
             WithdrawRequest({
@@ -200,16 +210,16 @@ contract SymmioDepositor is
     function cancelWithdrawRequest(uint256 id) external whenNotPaused {
         require(
             id < withdrawRequests.length,
-            "SymmioSolverDepositor: Invalid request ID"
+            "SymmioDepositor: Invalid request ID"
         );
         WithdrawRequest storage request = withdrawRequests[id];
         require(
             request.sender == msg.sender,
-            "SymmioSolverDepositor: Only the sender of request can cancel it"
+            "SymmioDepositor: Only the sender of request can cancel it"
         );
         require(
             request.status == RequestStatus.Pending,
-            "SymmioSolverDepositor: Invalid status"
+            "SymmioDepositor: Invalid status"
         );
         request.status = RequestStatus.Canceled;
         SymmioDepositorLpToken(lpTokenAddress).mint(msg.sender, request.amount);
@@ -228,11 +238,11 @@ contract SymmioDepositor is
         );
         require(
             _paybackRatio >= minimumPaybackRatio,
-            "SymmioSolverDepositor: Payback ratio is too low"
+            "SymmioDepositor: Payback ratio is too low"
         );
         require(
             _paybackRatio <= 1e18,
-            "SymmioSolverDepositor: Payback ratio is too high"
+            "SymmioDepositor: Payback ratio is too high"
         );
         uint256 totalRequiredBalance = lockedBalance;
 
@@ -240,17 +250,17 @@ contract SymmioDepositor is
             uint256 id = _acceptedRequestIds[i];
             require(
                 id < withdrawRequests.length,
-                "SymmioSolverDepositor: Invalid request ID"
+                "SymmioDepositor: Invalid request ID"
             );
             require(
                 withdrawRequests[id].status == RequestStatus.Pending,
-                "SymmioSolverDepositor: Invalid accepted request"
+                "SymmioDepositor: Invalid accepted request"
             );
             uint256 amountOut = (withdrawRequests[id].amount * _paybackRatio) /
                         1e18;
             require(
                 amountOut >= withdrawRequests[id].minAmountOut,
-                "SymmioSolverDepositor: Payback ratio is too low for this request"
+                "SymmioDepositor: Payback ratio is too low for this request"
             );
             totalRequiredBalance += amountOut;
             currentDeposit -= withdrawRequests[id].amount;
@@ -261,7 +271,7 @@ contract SymmioDepositor is
         require(
             IERC20(collateralTokenAddress).balanceOf(address(this)) >=
             totalRequiredBalance,
-            "SymmioSolverDepositor: Insufficient contract balance"
+            "SymmioDepositor: Insufficient contract balance"
         );
         lockedBalance = totalRequiredBalance;
         emit WithdrawRequestAcceptedEvent(
@@ -274,13 +284,13 @@ contract SymmioDepositor is
     function claimForWithdrawRequest(uint256 requestId) external whenNotPaused {
         require(
             requestId < withdrawRequests.length,
-            "SymmioSolverDepositor: Invalid request ID"
+            "SymmioDepositor: Invalid request ID"
         );
         WithdrawRequest storage request = withdrawRequests[requestId];
 
         require(
             request.status == RequestStatus.Ready,
-            "SymmioSolverDepositor: Request not ready for withdrawal"
+            "SymmioDepositor: Request not ready for withdrawal"
         );
 
         request.status = RequestStatus.Done;
@@ -296,5 +306,41 @@ contract SymmioDepositor is
 
     function unpause() external onlyRole(UNPAUSER_ROLE) {
         _unpause();
+    }
+
+    // Blast methods
+    function configurePointsOperator(address operator) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(operator != address(0), "SymmioDepositor: invalid operator");
+        BLAST_POINTS.configurePointsOperator(operator);
+    }
+
+    function claimUSDB(address recipient, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(recipient != address(this), "SymmioDepositor: recipient can not be the contract itself");
+        USDB.claim(recipient, amount);
+    }
+
+    function claimYield(address recipient, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(recipient != address(this), "SymmioDepositor: recipient can not be the contract itself");
+        BLAST.claimYield(address(this), recipient, amount);
+    }
+
+    function claimAllYield(address recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(recipient != address(this), "SymmioDepositor: recipient can not be the contract itself");
+        BLAST.claimAllYield(address(this), recipient);
+    }
+
+    function claimAllGas(address recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(recipient != address(this), "SymmioDepositor: recipient can not be the contract itself");
+        BLAST.claimAllGas(address(this), recipient);
+    }
+
+    function claimMaxGas(address recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(recipient != address(this), "SymmioDepositor: recipient can not be the contract itself");
+        BLAST.claimMaxGas(address(this), recipient);
+    }
+
+    function claimGasAtMinClaimRate(address recipient, uint256 minRate) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(recipient != address(this), "SymmioDepositor: recipient can not be the contract itself");
+        BLAST.claimGasAtMinClaimRate(address(this), recipient, minRate);
     }
 }

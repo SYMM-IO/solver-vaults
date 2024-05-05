@@ -38,7 +38,7 @@ contract RasaOffChainSymmioDepositor is Initializable, SymmioDepositor {
     }
 
     function setBroker(address _broker) public onlyRole(SETTER_ROLE) {
-        require(_broker != address(0), "SymmioSolverDepositor: Zero address");
+        require(_broker != address(0), "RasaOffChainSymmioDepositor: Zero address");
         broker = _broker;
         emit BrokerUpdatedEvent(_broker);
     }
@@ -46,13 +46,13 @@ contract RasaOffChainSymmioDepositor is Initializable, SymmioDepositor {
     function depositToBroker(
         uint256 amount
     ) external onlyRole(DEPOSITOR_ROLE) whenNotPaused {
-        require(broker != address(0), "SymmioSolverDepositor: Zero address");
+        require(broker != address(0), "RasaOffChainSymmioDepositor: Zero address");
         uint256 contractBalance = IERC20(collateralTokenAddress).balanceOf(
             address(this)
         );
         require(
             contractBalance - lockedBalance >= amount,
-            "SymmioSolverDepositor: Insufficient contract balance"
+            "RasaOffChainSymmioDepositor: Insufficient contract balance"
         );
         IERC20(collateralTokenAddress).safeTransfer(broker, amount);
         emit DepositToBroker(msg.sender, broker, amount);

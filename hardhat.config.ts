@@ -19,6 +19,7 @@ const mantleAPIKey: string = process.env.MANTLE_API_KEY || ""
 const polygonApiKey: string = process.env.POLYGON_API_KEY || ""
 const zkEvmApiKey: string = process.env.ZKEVM_API_KEY || ""
 const opBnbApiKey: string = process.env.OPBNB_API_KEY || ""
+const blastApiKey: string = process.env.BLAST_API_KEY || ""
 
 const config: HardhatUserConfig = {
 	defaultNetwork: "hardhat",
@@ -63,12 +64,13 @@ const config: HardhatUserConfig = {
 	},
 	etherscan: {
 		apiKey: {
-			mantle: mantleAPIKey,
-			bnb: bnbApiKey,
-			base: baseApiKey,
-			polygon: polygonApiKey,
-			zkEvm: zkEvmApiKey,
-			opbnb: opBnbApiKey,
+			// mantle: mantleAPIKey,
+			// bnb: bnbApiKey,
+			// base: baseApiKey,
+			// polygon: polygonApiKey,
+			// zkEvm: zkEvmApiKey,
+			// opbnb: opBnbApiKey,
+			blast: blastApiKey,
 		},
 		customChains: [
 			{
@@ -101,6 +103,14 @@ const config: HardhatUserConfig = {
 				urls: {
 					apiURL: `https://api-opbnb.bscscan.com/api?apikey=${opBnbApiKey}`,
 					browserURL: "https://opbnb.bscscan.com",
+				},
+			},
+			{
+				network: "blast",
+				chainId: 81457,
+				urls: {
+					apiURL: `https://api.blastscan.io/api?apiKey=${blastApiKey}`,
+					browserURL: "https://blastscan.io",
 				},
 			},
 		],

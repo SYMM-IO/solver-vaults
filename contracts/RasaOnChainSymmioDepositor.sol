@@ -52,11 +52,11 @@ contract RasaOnChainSymmioDepositor is Initializable, SymmioDepositor {
         );
         require(
             contractBalance - lockedBalance >= amount,
-            "SymmioSolverDepositor: Insufficient contract balance"
+            "RasaOnChainSymmioDepositor: Insufficient contract balance"
         );
         require(
             IERC20(collateralTokenAddress).approve(address(symmio), amount),
-            "SymmioSolverDepositor: Approve failed"
+            "RasaOnChainSymmioDepositor: Approve failed"
         );
         symmio.depositFor(solver, amount);
         emit DepositToSymmio(msg.sender, solver, amount);
